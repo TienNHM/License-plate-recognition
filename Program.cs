@@ -408,6 +408,7 @@ namespace recognizer
             //FrmRecognizer frmRecognizer = new FrmRecognizer();
             //frmRecognizer.ShowDialog();
 
+            // Giả sử nhận được danh sách link các ảnh đã tách biển số như sau:
             string[] images =
             {
                 "./assets/images/0.jpg",
@@ -428,6 +429,8 @@ namespace recognizer
             // Now that you're done, deInit the engine before exiting
             CheckResult("DeInit", UltAlprSdkEngine.deInit());
             #endregion
+
+            MessageBox.Show("Finished!");
         }
 
         #region Methods
@@ -569,12 +572,14 @@ namespace recognizer
                             (uint)(imageData.Stride / bytesPerPixel),
                             orientation
                         ));
+
                     //Print result to console
                     //Console.WriteLine("Result: {0}", result.json());
                     //File.WriteAllText("result.json", result.json());
                     Console.WriteLine(">>>>>>>>>>>>>>>>>>>");
                     var data = JObject.Parse(result.json());
-                    Console.WriteLine(data["plates"][0]["text"]);
+                    var text = data["plates"][0]["text"];
+                    Console.WriteLine(text);
                     //MessageBox.Show(result.json());
                 }
                 finally
