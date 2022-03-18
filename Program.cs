@@ -11,6 +11,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Newtonsoft.Json.Linq;
 // Include ultimateALPR namespace
 using org.doubango.ultimateAlpr.Sdk;
 
@@ -390,7 +391,10 @@ namespace recognizer
             // https://www.doubango.org/SDKs/anpr/docs/Configuration_options.html#license-token-data
             //String tokenDataBase64 = parameters.ContainsKey("--tokendata")
             //    ? parameters["--tokendata"] : String.Empty;
-            String tokenDataBase64 = String.Empty;
+            String tokenDataBase64 = ""; //String.Empty;
+
+            var runtimeLicenseKey = UltAlprSdkEngine.requestRuntimeLicenseKey();
+
             #endregion
 
             #region Init
@@ -401,8 +405,20 @@ namespace recognizer
             result = CheckResult("Init", UltAlprSdkEngine.init(BuildJSON(charsetAkaAlphabet, assetsFolder, tokenDataBase64)));
             #endregion
 
-            FrmRecognizer frmRecognizer = new FrmRecognizer();
-            frmRecognizer.ShowDialog();
+            //FrmRecognizer frmRecognizer = new FrmRecognizer();
+            //frmRecognizer.ShowDialog();
+
+            string[] images =
+            {
+                "./assets/images/0.jpg",
+                "./assets/images/1.jpg",
+                "./assets/images/2.jpg",
+                "./assets/images/3.jpg",
+                "./assets/images/4.jpg",
+            };
+
+            Console.WriteLine("==========================");
+            process(images);
 
             //// Wait for user press a key
             //Console.WriteLine("Press any key to terminate !!");
@@ -456,7 +472,7 @@ namespace recognizer
         // https://www.doubango.org/SDKs/anpr/docs/Configuration_options.html
         static String BuildJSON(String charsetAkaAlphabet, String assetsFolder = "", String tokenDataBase64 = "")
         {
-            return new JavaScriptSerializer().Serialize(new
+            var json = new JavaScriptSerializer().Serialize(new
             {
                 debug_level = CONFIG_DEBUG_LEVEL,
                 debug_write_input_image_enabled = CONFIG_DEBUG_WRITE_INPUT_IMAGE,
@@ -495,70 +511,78 @@ namespace recognizer
                 charset = charsetAkaAlphabet,
                 license_token_data = tokenDataBase64,
             });
+
+            // Console.WriteLine(json);
+            return json;
         }
 
-        public static void process()
+        public static void process(string[] images)
         {
-
-            #region Decode the JPEG/PNG/BMP file
-            String file = FileName; // parameters["--image"];
-            if (!System.IO.File.Exists(file))
+            foreach (var file in images)
             {
-                throw new System.IO.FileNotFoundException("File not found:" + file);
-            }
-            Bitmap image = new Bitmap(file);
-            if (Image.GetPixelFormatSize(image.PixelFormat) == 24 && ((image.Width * 3) & 3) != 0)
-            {
-                //!\\ Not DWORD aligned -> the stride will be multiple of 4-bytes instead of 3-bytes
-                // ultimateMICR requires stride to be in samples unit instead of in bytes
-                Console.Error.WriteLine(String.Format("//!\\ The image width ({0}) not a multiple of DWORD.", image.Width));
-                image = new Bitmap(image, new Size((image.Width + 3) & -4, image.Height));
-            }
-            int bytesPerPixel = Image.GetPixelFormatSize(image.PixelFormat) >> 3;
-            if (bytesPerPixel != 1 && bytesPerPixel != 3 && bytesPerPixel != 4)
-            {
-                throw new System.Exception("Invalid BPP:" + bytesPerPixel);
-            }
-            #endregion
-
-            #region Extract Exif orientation
-            const int ExifOrientationTagId = 0x112;
-            int orientation = 1;
-            if (Array.IndexOf(image.PropertyIdList, ExifOrientationTagId) > -1)
-            {
-                int orientation_ = image.GetPropertyItem(ExifOrientationTagId).Value[0];
-                if (orientation_ >= 1 && orientation_ <= 8)
+                #region Decode the JPEG/PNG/BMP file
+                //String file = FileName; // parameters["--image"];
+                if (!System.IO.File.Exists(file))
                 {
-                    orientation = orientation_;
+                    throw new System.IO.FileNotFoundException("File not found:" + file);
                 }
-            }
-            #endregion
+                Bitmap image = new Bitmap(file);
+                if (Image.GetPixelFormatSize(image.PixelFormat) == 24 && ((image.Width * 3) & 3) != 0)
+                {
+                    //!\\ Not DWORD aligned -> the stride will be multiple of 4-bytes instead of 3-bytes
+                    // ultimateMICR requires stride to be in samples unit instead of in bytes
+                    Console.Error.WriteLine(String.Format("//!\\ The image width ({0}) not a multiple of DWORD.", image.Width));
+                    image = new Bitmap(image, new Size((image.Width + 3) & -4, image.Height));
+                }
+                int bytesPerPixel = Image.GetPixelFormatSize(image.PixelFormat) >> 3;
+                if (bytesPerPixel != 1 && bytesPerPixel != 3 && bytesPerPixel != 4)
+                {
+                    throw new System.Exception("Invalid BPP:" + bytesPerPixel);
+                }
+                #endregion
 
-            #region Processing: Detection + recognition
-            // First inference is expected to be slow (deep learning models mapping to CPU/GPU memory)
-            BitmapData imageData = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, image.PixelFormat);
-            try
-            {
-                // For packed formats (RGB-family): https://www.doubango.org/SDKs/anpr/docs/cpp-api.html#_CPPv4N15ultimateAlprSdk16UltAlprSdkEngine7processEK22ULTALPR_SDK_IMAGE_TYPEPKvK6size_tK6size_tK6size_tKi
-                // For YUV formats (data from camera): https://www.doubango.org/SDKs/anpr/docs/cpp-api.html#_CPPv4N15ultimateAlprSdk16UltAlprSdkEngine7processEK22ULTALPR_SDK_IMAGE_TYPEPKvPKvPKvK6size_tK6size_tK6size_tK6size_tK6size_tK6size_tKi
-                result = CheckResult("Process", UltAlprSdkEngine.process(
-                        (bytesPerPixel == 1) ? ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_Y : (bytesPerPixel == 4 ? ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_BGRA32 : ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_BGR24),
-                        imageData.Scan0,
-                        (uint)imageData.Width,
-                        (uint)imageData.Height,
-                        (uint)(imageData.Stride / bytesPerPixel),
-                        orientation
-                    ));
-                // Print result to console
-                Console.WriteLine("Result: {0}", result.json());
-                File.WriteAllText("result.json", result.json());
-                MessageBox.Show(result.json());
+                #region Extract Exif orientation
+                const int ExifOrientationTagId = 0x112;
+                int orientation = 1;
+                if (Array.IndexOf(image.PropertyIdList, ExifOrientationTagId) > -1)
+                {
+                    int orientation_ = image.GetPropertyItem(ExifOrientationTagId).Value[0];
+                    if (orientation_ >= 1 && orientation_ <= 8)
+                    {
+                        orientation = orientation_;
+                    }
+                }
+                #endregion
+
+                #region Processing: Detection + recognition
+                // First inference is expected to be slow (deep learning models mapping to CPU/GPU memory)
+                BitmapData imageData = image.LockBits(new Rectangle(0, 0, image.Width, image.Height), ImageLockMode.ReadOnly, image.PixelFormat);
+                try
+                {
+                    // For packed formats (RGB-family): https://www.doubango.org/SDKs/anpr/docs/cpp-api.html#_CPPv4N15ultimateAlprSdk16UltAlprSdkEngine7processEK22ULTALPR_SDK_IMAGE_TYPEPKvK6size_tK6size_tK6size_tKi
+                    // For YUV formats (data from camera): https://www.doubango.org/SDKs/anpr/docs/cpp-api.html#_CPPv4N15ultimateAlprSdk16UltAlprSdkEngine7processEK22ULTALPR_SDK_IMAGE_TYPEPKvPKvPKvK6size_tK6size_tK6size_tK6size_tK6size_tK6size_tKi
+                    result = CheckResult("Process", UltAlprSdkEngine.process(
+                            (bytesPerPixel == 1) ? ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_Y : (bytesPerPixel == 4 ? ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_BGRA32 : ULTALPR_SDK_IMAGE_TYPE.ULTALPR_SDK_IMAGE_TYPE_BGR24),
+                            imageData.Scan0,
+                            (uint)imageData.Width,
+                            (uint)imageData.Height,
+                            (uint)(imageData.Stride / bytesPerPixel),
+                            orientation
+                        ));
+                    //Print result to console
+                    //Console.WriteLine("Result: {0}", result.json());
+                    //File.WriteAllText("result.json", result.json());
+                    Console.WriteLine(">>>>>>>>>>>>>>>>>>>");
+                    var data = JObject.Parse(result.json());
+                    Console.WriteLine(data["plates"][0]["text"]);
+                    //MessageBox.Show(result.json());
+                }
+                finally
+                {
+                    image.UnlockBits(imageData);
+                }
+                #endregion
             }
-            finally
-            {
-                image.UnlockBits(imageData);
-            }
-            #endregion
         }
         #endregion
     }
