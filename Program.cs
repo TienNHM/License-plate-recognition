@@ -418,7 +418,7 @@ namespace recognizer
             };
 
             Console.WriteLine("==========================");
-            process(images);
+            extractText(images);
 
             //// Wait for user press a key
             //Console.WriteLine("Press any key to terminate !!");
@@ -516,7 +516,7 @@ namespace recognizer
             return json;
         }
 
-        public static void process(string[] images)
+        public static void extractText(string[] images)
         {
             foreach (var file in images)
             {
